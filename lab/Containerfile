@@ -1,0 +1,40 @@
+# PostgreSQL 19 beta + pgvector for the PGDay hybrid retrieval demo.
+# Build: podman compose -f lab/compose.yaml build
+# Compatible with Podman and Docker.
+
+ARG PG_MAJOR=19
+ARG PG_IMAGE=postgres:19beta2
+FROM ${PG_IMAGE}
+
+ARG PG_MAJOR
+ARG PGVECTOR_REF=v0.8.6
+
+USER root
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      git \
+      postgresql-server-dev-${PG_MAJOR}; \
+    git clone --depth 1 --branch "${PGVECTOR_REF}" https://github.com/pgvector/pgvector.git /tmp/pgvector \
+      || git clone --depth 1 https://github.com/pgvector/pgvector.git /tmp/pgvector; \
+    cd /tmp/pgvector; \
+    make clean; \
+    make OPTFLAGS=""; \
+    make install; \
+    mkdir -p /usr/share/doc/pgvector; \
+    cp LICENSE README.md /usr/share/doc/pgvector/; \
+    cd /; \
+    rm -rf /tmp/pgvector; \
+    apt-get remove -y build-essential git postgresql-server-dev-${PG_MAJOR}; \
+    apt-get autoremove -y; \
+    rm -rf /var/lib/apt/lists/*
+
+# Python is used by the demo GUI service (same image, different entrypoint).
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends python3; \
+    rm -rf /var/lib/apt/lists/*
+
+# Keep default postgres entrypoint/user from base image.

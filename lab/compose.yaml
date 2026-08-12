@@ -1,0 +1,60 @@
+name: pgday-pg19-ai
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: localhost/pgday-pg19-ai:latest
+    container_name: pgday-pg19-ai
+    restart: unless-stopped
+    ports:
+      - "${PGDAY_PORT:-54329}:5432"
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: pgday
+    volumes:
+      - ./sql/init:/docker-entrypoint-initdb.d:ro
+      - pgday_pg19_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d pgday"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  gui:
+    image: localhost/pgday-pg19-ai:latest
+    container_name: pgday-pg19-ai-gui
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["python3", "/gui/server.py"]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: demo
+      PGPASSWORD: demo
+      PGDATABASE: pgday
+      GUI_HOST: 0.0.0.0
+      GUI_PORT: "8788"
+    ports:
+      - "${GUI_PORT:-8788}:8788"
+    volumes:
+      - ./gui:/gui:ro
+
+  slides:
+    image: localhost/pgday-pg19-ai:latest
+    container_name: pgday-pg19-ai-slides
+    restart: unless-stopped
+    working_dir: /slides
+    entrypoint: ["python3", "-m", "http.server", "8790", "--bind", "0.0.0.0"]
+    ports:
+      - "${SLIDES_PORT:-8790}:8790"
+    volumes:
+      - ../slides:/slides:ro
+
+volumes:
+  pgday_pg19_data:

@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PostgreSQL 19 SQL/PGQ: When Similarity Alone Is Not Enough</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#050713;--panel:#10152a;--ink:#f8f9ff;--muted:#c2cade;
+  --accent:#ff7a45;--mint:#48e0c2;--danger:#ff647c;--line:#293252;--blue:#7aa2ff;
+  --display:"Inter Tight","Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  color:var(--ink); font-family:var(--body); overflow:hidden;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  background-color:var(--bg);
+  background-image:
+    linear-gradient(rgba(122,162,255,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(122,162,255,.045) 1px,transparent 1px),
+    radial-gradient(circle at 15% 18%,rgba(85,70,180,.24),transparent 34%),
+    radial-gradient(circle at 86% 80%,rgba(255,104,69,.16),transparent 32%);
+  background-size:36px 36px,36px 36px,auto,auto;
+}
+.brandbar{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;justify-content:space-between;align-items:center;
+  height:56px;padding:0 28px;pointer-events:none;
+  background:linear-gradient(180deg,rgba(5,7,19,.92),transparent)}
+.brandbar img{height:32px}
+.brandbar .affil{font-size:.82rem;color:var(--muted);text-align:right;line-height:1.3;font-weight:500}
+.brandbar .affil strong{display:block;color:var(--ink);font-family:var(--display);font-weight:700}
+body.title-mode .brandbar{display:none}
+.deck{height:100vh;height:100dvh;display:grid;place-items:center;padding:5.5vh 2vw 4.5vh}
+.slide{display:none;position:relative;width:min(1180px,96vw);height:min(720px,88vh);
+  flex-direction:column;justify-content:safe center;gap:1rem;
+  padding:clamp(1.8rem,3.4vw,2.9rem);padding-top:clamp(2.1rem,3.8vw,3rem);
+  overflow:auto;background:linear-gradient(145deg,rgba(18,24,48,.97),rgba(8,12,28,.985));
+  border:1px solid rgba(122,162,255,.2);border-radius:10px;
+  box-shadow:0 30px 90px rgba(0,0,0,.58),inset 0 1px rgba(255,255,255,.025)}
+.slide.active{display:flex}
+.slide::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;border-radius:10px 10px 0 0;
+  background:linear-gradient(90deg,var(--accent),#9b7cff,var(--mint));pointer-events:none}
+.slide.title-slide{justify-content:center;padding:clamp(2rem,3.6vw,3.2rem)}
+
+/* ---------- title slide ---------- */
+.title-logo{position:absolute;top:1.3rem;right:1.5rem;height:44px}
+.title-kicker{position:absolute;top:1.6rem;left:1.8rem;margin:0;
+  font-family:var(--display);color:#ff9369;font-size:clamp(.8rem,1.25vw,.98rem);
+  font-weight:700;letter-spacing:.17em;text-transform:uppercase}
+.title-body{width:100%}
+.title-catch{font-family:var(--display);margin:0;font-weight:800;letter-spacing:-.032em;line-height:1.1;
+  white-space:nowrap;font-size:clamp(.88rem,2.45vw,2.15rem)}
+.accent{color:var(--accent)}
+.speaker-card-br{position:absolute;right:1.8rem;bottom:1.6rem;text-align:right;line-height:1.45}
+.speaker-card-br strong{display:block;font-family:var(--display);font-size:1.2rem;font-weight:700}
+.speaker-card-br span{color:var(--muted);font-size:1rem;font-weight:500}
+
+/* ---------- headings ---------- */
+.kicker{font-family:var(--display);color:#ff9369;font-size:clamp(.86rem,1.4vw,1.02rem);
+  font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin:0}
+h2{font-family:var(--display);margin:0;font-size:clamp(1.55rem,2.75vw,2.3rem);font-weight:700;
+  letter-spacing:-.03em;line-height:1.12;padding-bottom:.6rem;border-bottom:1px solid rgba(122,162,255,.18)}
+
+/* ---------- layout ---------- */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:.9rem}
+@media(max-width:820px){.grid2,.grid3{grid-template-columns:1fr}}
+.card{background:rgba(7,11,27,.68);border:1px solid rgba(122,162,255,.2);border-radius:12px;padding:1.05rem 1.15rem}
+.card strong{display:block;margin:.15rem 0 .4rem;font-family:var(--display);font-size:1.28rem;font-weight:700;letter-spacing:-.015em}
+.card p,.card li{margin:0;color:var(--muted);font-size:1.12rem;line-height:1.5;font-weight:450}
+.card ul{margin:.4rem 0 0;padding-left:1.15rem}
+.card li{margin-bottom:.4rem}
+.card li:last-child{margin-bottom:0}
+.card li strong,.card p strong{display:inline;font-size:inherit;margin:0;color:#fff}
+.card strong.ok{color:var(--mint)}
+.card strong.bad{color:var(--danger)}
+.pill{display:inline-block;background:var(--accent);color:#151515;font-family:var(--display);
+  font-size:.74rem;font-weight:800;letter-spacing:.09em;
+  text-transform:uppercase;border-radius:999px;padding:.22rem .6rem;margin-bottom:.5rem}
+
+/* ---------- emphasis blocks ---------- */
+.banner,.note-box{padding:.95rem 1.15rem;border-radius:12px;background:rgba(7,11,27,.72);
+  color:#dde5f1;font-size:1.15rem;font-weight:450;line-height:1.5}
+.banner{border-left:4px solid var(--accent)}
+.note-box{border:1px solid rgba(122,162,255,.2)}
+.talk{border-left:4px solid var(--blue);background:rgba(20,30,55,.85)}
+.talk strong{color:#9ec1ff}
+.bad{color:var(--danger);font-weight:650}
+.ok{color:var(--mint);font-weight:650}
+ol.steps-lg,ul.bullets{margin:0;padding-left:1.7rem;font-size:1.58rem;line-height:1.5;font-weight:450;color:#e3e9f4}
+ol.steps-lg li,ul.bullets li{margin-bottom:1.1rem}
+ol.steps-lg li:last-child,ul.bullets li:last-child{margin-bottom:0}
+ol.steps-lg li::marker{color:var(--accent);font-family:var(--display);font-weight:800}
+ol.steps-lg strong,ul.bullets strong{font-weight:700;color:#fff}
+.qbox{font-family:var(--display);font-size:clamp(1.35rem,2.25vw,1.85rem);font-weight:700;
+  letter-spacing:-.02em;line-height:1.3;padding:1.1rem 1.25rem;border-radius:12px;
+  border:1px solid rgba(255,122,69,.35);background:rgba(255,122,69,.08)}
+.tag{display:inline-block;font-family:var(--display);font-size:.76rem;font-weight:800;letter-spacing:.09em;
+  text-transform:uppercase;color:#151515;background:var(--blue);border-radius:6px;padding:.22rem .5rem;margin-right:.45rem}
+.tag.bad{background:var(--danger)}
+.tag.ok{background:var(--mint)}
+.tag.warn{background:#ffb020}
+.code-lg{font-family:var(--mono);background:#060916;border:1px solid rgba(122,162,255,.18);
+  border-radius:10px;padding:.95rem 1.1rem;color:#cfdaea;line-height:1.55;white-space:pre-wrap;
+  font-size:.95rem;font-weight:400;overflow:auto;max-height:44vh;margin:0}
+.mono{font-family:var(--mono);font-size:.94em}
+
+/* ---------- flip cards ---------- */
+.flip{perspective:1400px;cursor:pointer;height:236px;outline:none}
+.flip-inner{position:relative;width:100%;height:100%;transition:transform .55s cubic-bezier(.2,.7,.3,1);
+  transform-style:preserve-3d}
+.flip.flipped .flip-inner{transform:rotateY(180deg)}
+.flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  border-radius:12px;padding:1.05rem 1.15rem;display:flex;flex-direction:column;justify-content:center;
+  align-items:flex-start;background:rgba(7,11,27,.68);border:1px solid rgba(122,162,255,.22)}
+.flip-face strong,.flip-face p{width:100%}
+.glyph{display:flex;align-items:center;justify-content:center;width:100%;height:56px;margin-bottom:.55rem}
+.glyph svg{height:56px;width:auto;overflow:visible}
+.glyph .gnode{fill:rgba(255,122,69,.16);stroke:var(--accent);stroke-width:2.5}
+.glyph .gcore{fill:var(--accent)}
+.glyph .gline{stroke:var(--blue);stroke-width:2.5;fill:none}
+.glyph .glbl{fill:var(--muted);font-family:var(--display);font-size:9px;font-weight:800;letter-spacing:.08em}
+.glyph .grel{fill:var(--mint);font-family:var(--mono);font-size:8px}
+
+/* ---------- path diagrams ---------- */
+.pathviz{display:flex;align-items:center;justify-content:center;gap:.55rem;flex-wrap:wrap;
+  padding:.85rem 1rem;border-radius:12px;border:1px solid rgba(255,122,69,.35);
+  background:rgba(255,122,69,.08);margin:0}
+.pathviz .pnode{display:flex;flex-direction:column;align-items:center;gap:.35rem;min-width:92px}
+.pathviz .pdot{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(255,122,69,.16);border:2.5px solid var(--accent);box-shadow:inset 0 0 0 7px rgba(5,7,19,.55)}
+.pathviz .pdot::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.pathviz .pdot.hit{border-color:var(--mint);background:rgba(72,224,194,.16)}
+.pathviz .pdot.hit::after{background:var(--mint)}
+.pathviz .pdot.miss{border-color:var(--danger);background:rgba(255,100,124,.12);opacity:.55}
+.pathviz .pdot.miss::after{background:var(--danger)}
+.pathviz .pdot.dim{opacity:.4}
+.pathviz .plbl{font-family:var(--display);font-size:.78rem;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--muted);text-align:center;line-height:1.25}
+.pathviz .parrow{color:var(--blue);font-size:1.35rem;font-weight:700;margin-bottom:1.1rem}
+.pathviz .parrow.ok{color:var(--mint)}
+.pathviz .parrow.bad{color:var(--danger);opacity:.55}
+.pathviz.compact{padding:.55rem .7rem;gap:.4rem}
+.pathviz.compact .pnode{min-width:70px}
+.pathviz.compact .pdot{width:30px;height:30px;box-shadow:inset 0 0 0 5px rgba(5,7,19,.55)}
+.pathviz.compact .pdot::after{width:6px;height:6px}
+.pathviz.compact .plbl{font-size:.68rem}
+.pathviz.compact .parrow{font-size:1.1rem;margin-bottom:.85rem}
+
+.mini-glyph{display:flex;align-items:center;justify-content:center;height:48px;margin:.15rem 0 .55rem}
+.mini-glyph svg{height:48px;width:auto;overflow:visible}
+.flip:hover .flip-face{border-color:rgba(255,122,69,.5)}
+.flip-face strong{display:block;font-family:var(--display);font-size:1.28rem;font-weight:700;margin:.15rem 0 .4rem}
+.flip-face p{margin:0;color:var(--muted);font-size:1.1rem;line-height:1.5;font-weight:450}
+.flip-back{transform:rotateY(180deg);border-color:rgba(255,122,69,.42);
+  background:linear-gradient(160deg,rgba(26,35,68,.96),rgba(10,15,34,.99))}
+.flip-back p{color:#e0e7f3}
+.flip-hint{position:absolute;right:.85rem;bottom:.7rem;font-family:var(--display);font-size:.68rem;
+  letter-spacing:.11em;text-transform:uppercase;color:#8b97ab;font-weight:700}
+
+/* ---------- thank you ---------- */
+.thank-wrap{display:flex;gap:2rem;align-items:center;justify-content:space-between;height:100%}
+.thank-meta h2{border:0;padding:0;font-size:clamp(2rem,3.3vw,2.8rem)}
+.thank-meta .role{margin:1.6rem 0 0;font-family:var(--display);font-size:1.3rem;font-weight:700;color:var(--ink)}
+.thank-meta .co{margin:.3rem 0 0;font-size:1.08rem;font-weight:600;color:var(--accent)}
+.thank-hint{margin-top:1.4rem;font-family:var(--display);font-size:.82rem;letter-spacing:.12em;
+  text-transform:uppercase;color:#8b97ab;font-weight:700}
+
+/* ---------- chrome ---------- */
+#notes{display:none;position:fixed;left:18px;bottom:18px;max-width:min(540px,92vw);z-index:20;
+  background:#0b1220;border:1px solid rgba(122,162,255,.35);border-radius:12px;padding:13px 15px;
+  color:#d5deea;font-size:.9rem;line-height:1.5;box-shadow:0 12px 40px rgba(0,0,0,.45);white-space:pre-wrap}
+#notes.on{display:block}
+#notes::before{content:"SPEAKER";display:block;font-family:var(--display);font-size:.68rem;letter-spacing:.13em;
+  text-transform:uppercase;color:#ff9369;font-weight:800;margin-bottom:.4rem}
+#pos{position:fixed;right:18px;bottom:14px;font-family:var(--display);font-size:.76rem;color:#8b97ab;z-index:5;font-weight:600}
+</style>
+</head>
+<body>
+<div class="brandbar">
+  <img src="logo.svg" alt="Yugabyte"/>
+  <div class="affil"><strong>PGDay 2026</strong>PostgreSQL 19 · AI retrieval</div>
+</div>
+<div class="deck" id="deck"></div>
+<div id="notes"></div>
+<div id="pos"></div>
+<script>
+const slides = [
+{
+  title: true,
+  notes: "Open warm. Say your name and role in one sentence, then move straight to the agenda. No product pitch.",
+  html: `
+    <p class="title-kicker">PGDay 2026 · 30 minutes</p>
+    <img class="title-logo" src="logo.svg" alt=""/>
+    <div class="title-body">
+      <h1 class="title-catch">PostgreSQL 19 <span class="accent">SQL/PGQ</span>: When Similarity Alone Is Not Enough</h1>
+    </div>
+    <div class="speaker-card-br">
+      <strong>Rajesh Madiwale</strong>
+      <span>Sr Solution Architect · Yugabyte</span>
+    </div>`
+},
+{
+  notes: "Thirty seconds. Read the five points as promises, so the room knows exactly what they are getting.",
+  html: `
+    <p class="kicker">Agenda</p>
+    <h2>What we will understand together</h2>
+    <ol class="steps-lg">
+      <li><strong>SQL/PGQ</strong> — the new graph feature in PostgreSQL 19</li>
+      <li><strong>The challenge before it</strong> — how we answered relationship questions until now</li>
+      <li><strong>A real problem</strong> that SQL or vectors alone cannot solve</li>
+      <li><strong>The difference</strong> between SQL, pgvector and SQL/PGQ</li>
+      <li><strong>A live demo</strong> — one question, three very different answers</li>
+    </ol>`
+},
+{
+  notes: "Click each card to reveal the definition. Say the word, click, then read the back in your own words. This keeps three ideas separate instead of one dense paragraph.",
+  html: `
+    <p class="kicker">PostgreSQL 19 · New feature</p>
+    <h2>What is SQL/PGQ?</h2>
+    <div class="banner"><strong>SQL/PGQ means Property Graph Queries inside SQL.</strong>
+    We describe tables we already have as <strong>vertices</strong> and <strong>edges</strong>, then search for
+    relationship <strong>patterns</strong> using <span class="mono">GRAPH_TABLE</span> and <span class="mono">MATCH</span>.</div>
+    <div class="grid3">
+      <div class="flip" tabindex="0">
+        <div class="flip-inner">
+          <div class="flip-face">
+            <span class="pill">Vertex</span>
+            <div class="glyph" aria-hidden="true">
+              <svg viewBox="0 0 150 56">
+                <circle class="gnode" cx="75" cy="24" r="16"/>
+                <circle class="gcore" cx="75" cy="24" r="4.5"/>
+                <text class="glbl" x="75" y="52" text-anchor="middle">POLICY</text>
+              </svg>
+            </div>
+            <strong>A business object</strong>
+            <p>A person, a policy, a control, a database.</p>
+            <span class="flip-hint">Click to define</span>
+          </div>
+          <div class="flip-face flip-back">
+            <strong>Vertex</strong>
+            <p>A row in a table, treated as a point in the graph.
+            Nothing is copied — PostgreSQL simply reads your existing rows as vertices.</p>
+          </div>
+        </div>
+      </div>
+      <div class="flip" tabindex="0">
+        <div class="flip-inner">
+          <div class="flip-face">
+            <span class="pill">Edge</span>
+            <div class="glyph" aria-hidden="true">
+              <svg viewBox="0 0 150 56">
+                <defs>
+                  <marker id="arrE" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 Z" fill="var(--blue)"/>
+                  </marker>
+                </defs>
+                <line class="gline" x1="34" y1="24" x2="112" y2="24" marker-end="url(#arrE)"/>
+                <text class="grel" x="75" y="16" text-anchor="middle">ENFORCES</text>
+                <circle class="gnode" cx="24" cy="24" r="13"/>
+                <circle class="gcore" cx="24" cy="24" r="4"/>
+                <circle class="gnode" cx="126" cy="24" r="13"/>
+                <circle class="gcore" cx="126" cy="24" r="4"/>
+              </svg>
+            </div>
+            <strong>A relationship</strong>
+            <p>Applies to · enforces · protects.</p>
+            <span class="flip-hint">Click to define</span>
+          </div>
+          <div class="flip-face flip-back">
+            <strong>Edge</strong>
+            <p>A row that connects two vertices in a direction, usually a table
+            holding two foreign keys. That is how a policy connects to the system it protects.</p>
+          </div>
+        </div>
+      </div>
+      <div class="flip" tabindex="0">
+        <div class="flip-inner">
+          <div class="flip-face">
+            <span class="pill">Pattern</span>
+            <div class="glyph" aria-hidden="true">
+              <svg viewBox="0 0 150 56">
+                <defs>
+                  <marker id="arrP" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 Z" fill="var(--mint)"/>
+                  </marker>
+                </defs>
+                <line class="gline" style="stroke:var(--mint)" x1="24" y1="24" x2="62" y2="24" marker-end="url(#arrP)"/>
+                <line class="gline" style="stroke:var(--mint)" x1="88" y1="24" x2="126" y2="24" marker-end="url(#arrP)"/>
+                <circle class="gnode" cx="14" cy="24" r="11"/>
+                <circle class="gcore" cx="14" cy="24" r="3.5"/>
+                <circle class="gnode" cx="75" cy="24" r="11"/>
+                <circle class="gcore" cx="75" cy="24" r="3.5"/>
+                <circle class="gnode" cx="136" cy="24" r="11"/>
+                <circle class="gcore" cx="136" cy="24" r="3.5"/>
+                <text class="glbl" x="75" y="52" text-anchor="middle">DOC → POLICY → SYSTEM</text>
+              </svg>
+            </div>
+            <strong>The question shape</strong>
+            <p>Who is connected to what, and how?</p>
+            <span class="flip-hint">Click to define</span>
+          </div>
+          <div class="flip-face flip-back">
+            <strong>Pattern</strong>
+            <p>The shape we draw inside <span class="mono">MATCH</span>. PostgreSQL returns
+            every path in the data that fits that shape, as ordinary rows.</p>
+          </div>
+        </div>
+      </div>
+    </div>`
+},
+{
+  notes: "Four advantages. The strongest one is the first: the query looks like the business question, so anyone can review it.",
+  html: `
+    <p class="kicker">Why it matters</p>
+    <h2>Advantages of SQL/PGQ</h2>
+    <div class="grid2">
+      <div class="card">
+        <strong>Relationship questions stay readable</strong>
+        <p>The query shows the path itself — policy, control, system — instead of hiding it inside a long chain of joins.</p>
+      </div>
+      <div class="card">
+        <strong>Your tables remain the source of truth</strong>
+        <p>A property graph is only a definition placed over tables you already have. There is no second copy to keep in step.</p>
+      </div>
+      <div class="card">
+        <strong>Results are ordinary SQL rows</strong>
+        <p><span class="mono">GRAPH_TABLE</span> returns a normal result set, so you can filter, join, aggregate and report on it as usual.</p>
+      </div>
+      <div class="card">
+        <strong>It is a standard, not a new language</strong>
+        <p>SQL/PGQ comes from the SQL:2023 standard, so the skill your team learns is transferable, not vendor-specific.</p>
+      </div>
+    </div>
+    <div class="note-box talk"><strong>In one line:</strong> we can finally ask relationship questions while keeping PostgreSQL as the single source of truth.</div>`
+},
+{
+  notes: "Be fair here. These options all work — they are just expensive in effort or in operations. Do not attack anyone's current architecture.",
+  html: `
+    <p class="kicker">Before PostgreSQL 19</p>
+    <h2>How did we answer these questions until now?</h2>
+    <div class="grid2">
+      <div class="card">
+        <span class="pill">Stay inside PostgreSQL</span>
+        <ul>
+          <li>Chain several self-joins together for one fixed path</li>
+          <li>Move to recursive CTEs as soon as the depth can change</li>
+          <li>Every new question means writing long SQL that is hard to review</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="pill">Go outside PostgreSQL</span>
+        <ul>
+          <li>Copy the same data into a separate graph database</li>
+          <li>Build and monitor pipelines to keep both systems in step</li>
+          <li>Run, secure, back up and staff a second platform</li>
+        </ul>
+      </div>
+    </div>
+    <div class="banner"><strong>The real challenge:</strong> the business asks a simple relationship question, and we answer it either with complicated SQL or by adding another database.</div>`
+},
+{
+  notes: "This is the use case that justifies the whole talk. Point at the path diagram first, then the three problem cards.",
+  html: `
+    <p class="kicker">A real problem · AI access assistant</p>
+    <h2>“Can contractors access production databases?”</h2>
+    <div class="pathviz">
+      <div class="pnode"><span class="pdot"></span><span class="plbl">Document</span></div>
+      <span class="parrow">→</span>
+      <div class="pnode"><span class="pdot"></span><span class="plbl">Contractor<br/>policy</span></div>
+      <span class="parrow">→</span>
+      <div class="pnode"><span class="pdot"></span><span class="plbl">Deny<br/>control</span></div>
+      <span class="parrow">→</span>
+      <div class="pnode"><span class="pdot"></span><span class="plbl">Production<br/>database</span></div>
+    </div>
+    <div class="grid3">
+      <div class="card">
+        <strong>The wording problem</strong>
+        <p>The user asks about “contractors”, but the policy may call them “third-party staff”.</p>
+      </div>
+      <div class="card">
+        <strong>The relationship problem</strong>
+        <p>No single document states the decision. It only exists across several linked records.</p>
+      </div>
+      <div class="card">
+        <strong>The trust problem</strong>
+        <p>For a security question, a document that merely looks relevant is not an acceptable answer.</p>
+      </div>
+    </div>
+    <div class="banner"><strong>What we actually need:</strong> not just the word “No”, but the evidence path that proves it.</div>`
+},
+{
+  notes: "Central comparison. Never say SQL or vectors are bad — say each answers a different kind of question, and this problem needs all three.",
+  html: `
+    <p class="kicker">Understanding the difference</p>
+    <h2>Normal SQL vs pgvector vs SQL/PGQ</h2>
+    <div class="grid3">
+      <div class="card">
+        <span class="pill">Normal SQL</span>
+        <div class="mini-glyph" aria-hidden="true">
+          <svg viewBox="0 0 120 48">
+            <rect x="18" y="8" width="84" height="32" rx="4" fill="rgba(255,122,69,.12)" stroke="var(--accent)" stroke-width="2"/>
+            <line x1="18" y1="18" x2="102" y2="18" stroke="var(--accent)" stroke-width="1.5" opacity=".7"/>
+            <line x1="18" y1="28" x2="102" y2="28" stroke="var(--blue)" stroke-width="1.5" opacity=".45"/>
+            <line x1="18" y1="36" x2="70" y2="36" stroke="var(--blue)" stroke-width="1.5" opacity=".35"/>
+            <circle cx="92" cy="28" r="7" fill="rgba(5,7,19,.9)" stroke="var(--accent)" stroke-width="2"/>
+            <text x="92" y="31" text-anchor="middle" fill="var(--accent)" font-size="9" font-weight="800" font-family="var(--display)">=</text>
+          </svg>
+        </div>
+        <strong>Finds exact facts</strong>
+        <p>Filters, keys, joins and transactions. This is where the trusted data lives.</p>
+        <p style="margin-top:.6rem"><span class="bad">On its own:</span> it misses different wording, and long paths become long joins.</p>
+      </div>
+      <div class="card">
+        <span class="pill">pgvector</span>
+        <div class="mini-glyph" aria-hidden="true">
+          <svg viewBox="0 0 120 48">
+            <circle cx="28" cy="30" r="5" fill="rgba(122,162,255,.35)" stroke="var(--blue)" stroke-width="1.5"/>
+            <circle cx="48" cy="14" r="4" fill="rgba(122,162,255,.25)" stroke="var(--blue)" stroke-width="1.5"/>
+            <circle cx="70" cy="34" r="4.5" fill="rgba(122,162,255,.3)" stroke="var(--blue)" stroke-width="1.5"/>
+            <circle cx="88" cy="18" r="9" fill="rgba(255,122,69,.16)" stroke="var(--accent)" stroke-width="2.5"/>
+            <circle cx="88" cy="18" r="3.5" fill="var(--accent)"/>
+            <circle cx="88" cy="18" r="16" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="3 3" opacity=".7"/>
+          </svg>
+        </div>
+        <strong>Finds similar meaning</strong>
+        <p>Compares embeddings, so “contractor” can still match “third-party staff”.</p>
+        <p style="margin-top:.6rem"><span class="bad">On its own:</span> it returns a relevant document, never the decision behind it.</p>
+      </div>
+      <div class="card">
+        <span class="pill">SQL/PGQ</span>
+        <div class="mini-glyph" aria-hidden="true">
+          <svg viewBox="0 0 120 48">
+            <defs>
+              <marker id="arrCmp" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+                <path d="M0,0 L5,3 L0,6 Z" fill="var(--mint)"/>
+              </marker>
+            </defs>
+            <line x1="22" y1="24" x2="48" y2="24" stroke="var(--mint)" stroke-width="2.5" marker-end="url(#arrCmp)"/>
+            <line x1="68" y1="24" x2="94" y2="24" stroke="var(--mint)" stroke-width="2.5" marker-end="url(#arrCmp)"/>
+            <circle cx="14" cy="24" r="9" fill="rgba(255,122,69,.16)" stroke="var(--accent)" stroke-width="2"/>
+            <circle cx="14" cy="24" r="3" fill="var(--accent)"/>
+            <circle cx="58" cy="24" r="9" fill="rgba(255,122,69,.16)" stroke="var(--accent)" stroke-width="2"/>
+            <circle cx="58" cy="24" r="3" fill="var(--accent)"/>
+            <circle cx="102" cy="24" r="9" fill="rgba(72,224,194,.16)" stroke="var(--mint)" stroke-width="2"/>
+            <circle cx="102" cy="24" r="3" fill="var(--mint)"/>
+          </svg>
+        </div>
+        <strong>Finds connected facts</strong>
+        <p>Matches a relationship pattern and returns every path that fits it.</p>
+        <p style="margin-top:.6rem"><span class="ok">What it adds:</span> the evidence path that explains the answer.</p>
+      </div>
+    </div>
+    <div class="banner"><strong>Used together:</strong> SQL keeps the trusted facts, pgvector finds the right starting point, and SQL/PGQ follows the evidence.</div>`
+},
+{
+  notes: "Run the query live. Expect zero rows. Point at the faded path — nothing lit up because the keywords never matched.",
+  html: `
+    <p class="kicker">Demo 1 · Normal SQL</p>
+    <h2>Searching by keywords</h2>
+    <div class="qbox">“Can contractors access production databases?”</div>
+    <div class="grid2">
+      <pre class="code-lg">SELECT id, title, body
+FROM documents
+WHERE body ILIKE '%contractor%production%';</pre>
+      <div class="card">
+        <span class="pill">What we see</span>
+        <div class="pathviz compact">
+          <div class="pnode"><span class="pdot miss"></span><span class="plbl">Document</span></div>
+          <span class="parrow bad">→</span>
+          <div class="pnode"><span class="pdot dim"></span><span class="plbl">Policy</span></div>
+          <span class="parrow bad">→</span>
+          <div class="pnode"><span class="pdot dim"></span><span class="plbl">Control</span></div>
+          <span class="parrow bad">→</span>
+          <div class="pnode"><span class="pdot dim"></span><span class="plbl">System</span></div>
+        </div>
+        <p style="margin-top:.7rem"><span class="bad">No rows returned.</span> The policy exists — our keywords simply did not match its wording.</p>
+      </div>
+    </div>`
+},
+{
+  notes: "Now the vector search finds the right document. Point at the one lit node, and the rest still dark.",
+  html: `
+    <p class="kicker">Demo 2 · pgvector</p>
+    <h2>Searching by meaning</h2>
+    <div class="qbox">“Can contractors access production databases?”</div>
+    <div class="grid2">
+      <pre class="code-lg">SELECT id, title
+FROM documents
+ORDER BY embedding &lt;=&gt; '[0.88, 0.12, 0.10]'
+LIMIT 1;</pre>
+      <div class="card">
+        <span class="pill">What we see</span>
+        <div class="pathviz compact">
+          <div class="pnode"><span class="pdot hit"></span><span class="plbl">Document</span></div>
+          <span class="parrow bad">→</span>
+          <div class="pnode"><span class="pdot dim"></span><span class="plbl">Policy</span></div>
+          <span class="parrow bad">→</span>
+          <div class="pnode"><span class="pdot dim"></span><span class="plbl">Control</span></div>
+          <span class="parrow bad">→</span>
+          <div class="pnode"><span class="pdot dim"></span><span class="plbl">System</span></div>
+        </div>
+        <p style="margin-top:.7rem">Finds <strong>“Access control overview”</strong>, but it only says
+        <em>“see the linked policies”</em>. The rest of the path is still dark.</p>
+      </div>
+    </div>`
+},
+{
+  notes: "The moment of the talk. Run it, then narrate the fully lit path. Pause two seconds before the answer.",
+  html: `
+    <p class="kicker">Demo 3 · pgvector + SQL/PGQ</p>
+    <h2>Following the relationships</h2>
+    <div class="grid2">
+      <pre class="code-lg">SELECT *
+FROM GRAPH_TABLE (
+  access_kg
+  MATCH (doc IS document WHERE doc.id = 1)
+       -[IS mentions]-&gt;(pol IS entity)
+       -[IS link]-&gt;(ctl IS entity)
+       -[IS link]-&gt;(sys IS entity)
+  COLUMNS (pol.name, ctl.name, sys.name)
+);</pre>
+      <div class="card">
+        <span class="pill">The evidence path</span>
+        <div class="pathviz compact">
+          <div class="pnode"><span class="pdot hit"></span><span class="plbl">Document</span></div>
+          <span class="parrow ok">→</span>
+          <div class="pnode"><span class="pdot hit"></span><span class="plbl">Contractor<br/>Access</span></div>
+          <span class="parrow ok">→</span>
+          <div class="pnode"><span class="pdot hit"></span><span class="plbl">Production<br/>Deny</span></div>
+          <span class="parrow ok">→</span>
+          <div class="pnode"><span class="pdot hit"></span><span class="plbl">Production<br/>DB</span></div>
+        </div>
+        <p style="margin-top:.7rem;color:var(--ink);font-size:1.12rem">
+        <strong class="ok">Answer:</strong> No — contractors cannot access production databases,
+        and we can show exactly why.</p>
+      </div>
+    </div>`
+},
+{
+  notes: "Close on business value, not syntax. These are the four things the room just watched happen.",
+  html: `
+    <p class="kicker">What we gained</p>
+    <h2>Benefits we just demonstrated</h2>
+    <div class="grid2">
+      <div class="card">
+        <strong>The answer can be explained</strong>
+        <p>We return the reasoning path, not only a document that looked similar.</p>
+      </div>
+      <div class="card">
+        <strong>The query reads like the question</strong>
+        <p>Policy, control and system are visible, so a reviewer can confirm the logic.</p>
+      </div>
+      <div class="card">
+        <strong>One platform, three kinds of search</strong>
+        <p>Exact facts, meaning and relationships all answered inside PostgreSQL.</p>
+      </div>
+      <div class="card">
+        <strong>Less data movement</strong>
+        <p>We used relationships that were already sitting in our tables.</p>
+      </div>
+    </div>
+    <div class="pathviz">
+      <div class="pnode"><span class="pdot"></span><span class="plbl">SQL<br/>exact facts</span></div>
+      <span class="parrow">→</span>
+      <div class="pnode"><span class="pdot"></span><span class="plbl">pgvector<br/>meaning</span></div>
+      <span class="parrow ok">→</span>
+      <div class="pnode"><span class="pdot hit"></span><span class="plbl">PGQ<br/>relationships</span></div>
+    </div>`
+},
+{
+  title: true,
+  notes: "Thank the organisers, invite one or two questions, and offer to continue detailed discussions afterwards.",
+  html: `
+    <img class="title-logo" src="logo.svg" alt=""/>
+    <div class="thank-wrap">
+      <div class="thank-meta">
+        <h2>Thank you</h2>
+        <p class="role">Rajesh Madiwale</p>
+        <p class="co">Sr Solution Architect · Yugabyte</p>
+        <p class="thank-hint">Questions welcome · PGDay 2026</p>
+      </div>
+      <div class="card" style="min-width:300px">
+        <strong>To remember</strong>
+        <ul>
+          <li>SQL finds exact facts</li>
+          <li>pgvector finds similar meaning</li>
+          <li>SQL/PGQ finds and explains relationships</li>
+        </ul>
+      </div>
+    </div>`
+}
+];
+
+let i = 0;
+const deck = document.getElementById('deck');
+const notes = document.getElementById('notes');
+const pos = document.getElementById('pos');
+
+function clamp(n){ return Math.max(0, Math.min(slides.length - 1, n)); }
+
+function render(){
+  const s = slides[i];
+  document.body.classList.toggle('title-mode', !!s.title);
+  deck.innerHTML = `<section class="slide active${s.title ? ' title-slide' : ''}">${s.html}</section>`;
+  notes.textContent = s.notes || '';
+  pos.textContent = `${i + 1} / ${slides.length}`;
+  if (location.hash !== `#${i + 1}`) history.replaceState(null, '', `#${i + 1}`);
+}
+
+function go(n){ i = clamp(n); render(); }
+
+function fromHash(){
+  const n = parseInt(location.hash.slice(1), 10);
+  return Number.isFinite(n) ? n - 1 : 0;
+}
+
+window.addEventListener('hashchange', () => go(fromHash()));
+
+deck.addEventListener('click', e => {
+  const card = e.target.closest('.flip');
+  if (card) card.classList.toggle('flipped');
+});
+
+document.addEventListener('keydown', e => {
+  const flip = document.activeElement && document.activeElement.classList.contains('flip');
+  if (flip && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault(); document.activeElement.classList.toggle('flipped'); return;
+  }
+  if (['ArrowRight','PageDown',' '].includes(e.key)) { e.preventDefault(); go(i + 1); }
+  if (['ArrowLeft','PageUp'].includes(e.key)) { e.preventDefault(); go(i - 1); }
+  if (e.key === 'f' || e.key === 'F') {
+    document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  }
+  if (e.key === 's' || e.key === 'S') notes.classList.toggle('on');
+  if (e.key === 'Home') go(0);
+  if (e.key === 'End') go(slides.length - 1);
+});
+
+go(fromHash());
+</script>
+</body>
+</html>
