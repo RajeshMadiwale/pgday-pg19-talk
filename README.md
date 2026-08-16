@@ -16,10 +16,6 @@ Handout: [`lab/ATTENDEE.md`](lab/ATTENDEE.md)
 | Path | Purpose |
 |---|---|
 | `lab/` | Containerized Postgres 19 + pgvector + A/B/C demos |
-| `ABSTRACT.md` | CFP abstract |
-| `SPEAKER.md` | Speaker prep notes |
-| `TALK-PREP.md` | Full talk preparation guide |
-| `OUTLINE.md` | Slide timing |
 | `slides/` | HTML deck (open http://127.0.0.1:8790 after `podman compose up -d`) |
 | `slides/PGDay-2026-SQL-PGQ.pdf` | **12-page PDF** for sharing / review |
 | `demo/` | Single-file SQL sketch |
