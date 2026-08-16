@@ -1,8 +1,6 @@
-## Introduction to SQL/PGQ
+## Understand SQL/PGQ
 
-Read this once the night before. You do not need to recite it on stage — it is
-the mental model behind slides 3–4 and Demo C. If someone asks a foundational
-question after the talk, answer from here.
+
 
 ### What it is
 
